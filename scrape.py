@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,15 +87,15 @@ def remotive():
 
 
 def himalayas():
-    for q in ["software engineer", "developer", "ai engineer"]:
+    for q in ["software engineer", "developer", "ai engineer", "full stack", "backend", "frontend", "machine learning", "devops"]:
         cursor = None
-        for _ in range(5):
+        for _ in range(8):
             url = f"https://himalayas.app/jobs/api/search?q={q.replace(' ', '+')}&worldwide=true&country=IN&limit=20"
             if cursor:
                 url += f"&cursor={cursor}"
             d = get(url).json()
             for j in d["jobs"]:
-                if j.get("pubDate") and NOW - j["pubDate"] > 7 * 86400:
+                if j.get("pubDate") and NOW - j["pubDate"] > KEEP_DAYS * 86400:
                     continue
                 loc = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
                 sal = f"{j.get('currency') or '$'} {j['minSalary']:,}–{j['maxSalary']:,}" if j.get("minSalary") and j.get("maxSalary") else ""
@@ -120,8 +121,13 @@ def wwr():
 
 
 def arc():
-    for page in range(1, 4):
-        p = next_data(get(f"https://arc.dev/remote-jobs?page={page}").text)["props"]["pageProps"]
+    cats = ["", "python", "react", "javascript", "typescript", "node-js", "ai", "machine-learning", "golang",
+            "java", "ruby-on-rails", "devops", "aws", "ios", "android", "react-native", "django", "php", "rust", "data-engineering"]
+    for cat in cats:  # ?page= is ignored, category pages are not
+        try:
+            p = next_data(get(f"https://arc.dev/remote-jobs/{cat}".rstrip("/")).text)["props"]["pageProps"]
+        except Exception:
+            continue
         for j in p.get("arcJobs", []):
             loc = ", ".join(j.get("requiredCountries") or []) or "Worldwide"
             sal = f"${j['minHourlyRate']}–{j['maxHourlyRate']}/hr" if j.get("maxHourlyRate") else ""
@@ -135,10 +141,11 @@ def arc():
 
 
 def yc():
-    roles = ["software-engineer"]  # other role slugs return the same 40 postings
-    for role in roles:
+    paths = [f"role/{r}/{l}" for r in ["software-engineer", "full-stack", "backend", "frontend", "machine-learning",
+                                       "devops", "android", "ios", "data-science"] for l in ["remote", "india"]]
+    for path in paths:  # ?page= is ignored; each role/location slice is its own 40
         try:
-            text = get(f"https://www.ycombinator.com/jobs/role/{role}/remote").text
+            text = get(f"https://www.ycombinator.com/jobs/{path}").text
         except Exception:
             continue
         m = re.search(r'data-page="([^"]*)"', text)
@@ -150,8 +157,15 @@ def yc():
 
 
 def wellfound():
-    for page in range(1, 6):
-        d = next_data(get(f"https://wellfound.com/role/r/software-engineer?page={page}").text)
+    plan = [("software-engineer", 30)] + [(r, 8) for r in ["full-stack-engineer", "backend-engineer", "frontend-engineer",
+                                                          "machine-learning-engineer", "ai-engineer", "devops-engineer",
+                                                          "mobile-engineer", "data-engineer"]]
+    pages = [(r, p) for r, n in plan for p in range(1, n + 1)]
+    for role, page in pages:
+        try:
+            d = next_data(get(f"https://wellfound.com/role/r/{role}?page={page}").text)
+        except Exception:
+            continue
         ap = d["props"]["pageProps"]["apolloState"]["data"]
         for v in ap.values():
             if v.get("__typename") != "StartupResult":
@@ -166,9 +180,16 @@ def wellfound():
 
 
 def cutshort():
-    for _ in range(1):  # ?page= is ignored server-side; daily runs pick up the newest 50
-        d = next_data(get("https://cutshort.io/jobs/remote-jobs").text)
-        jobs = d["props"]["pageProps"]["dehydratedState"]["queries"][0]["state"]["data"]["data"]["pageData"]["jobs"]
+    slugs = ["remote-jobs"] + [f"remote-{t}-jobs" for t in ["python", "javascript", "java", "nodejs", "reactjs", "react",
+                                                          "angular", "golang", "php", "django", "aws", "devops",
+                                                          "machine-learning", "data-science", "flutter", "android", "ios",
+                                                          "typescript", "ruby-on-rails", "dotnet"]]
+    for slug in slugs:  # ?page= is ignored; each tech page is its own newest 50
+        try:
+            d = next_data(get(f"https://cutshort.io/jobs/{slug}").text)
+            jobs = d["props"]["pageProps"]["dehydratedState"]["queries"][0]["state"]["data"]["data"]["pageData"]["jobs"]
+        except Exception:
+            continue
         for j in jobs:
             s = j.get("salaryRange") or {}
             sal = f"₹{s['min']/1e5:.0f}–{s['max']/1e5:.0f} LPA" if s.get("currency") == "INR" and s.get("max") else ""
@@ -177,7 +198,7 @@ def cutshort():
 
 
 def instahyre():
-    for off in range(0, 35 * 8, 35):
+    for off in range(0, 35 * 30, 35):
         time.sleep(2)
         d = get(f"https://www.instahyre.com/api/v1/job_search?limit=35&offset={off}").json()
         for j in d.get("objects", []):
@@ -197,12 +218,21 @@ def main():
     if OUT.exists():
         old = {j["url"]: j for j in json.loads(OUT.read_text()).get("jobs", [])}
 
-    fresh, status = {}, {}
-    for src in SOURCES:
-        name = src.__name__
+    def run(src):
         try:
+            return src.__name__, list(src())
+        except Exception as e:  # one broken site shouldn't kill the run
+            return src.__name__, f"error: {type(e).__name__}: {e}"[:200]
+
+    fresh, status = {}, {}
+    with ThreadPoolExecutor(len(SOURCES)) as pool:
+        results = list(pool.map(run, SOURCES))
+    for name, got in results:
+        if isinstance(got, str):
+            status[name] = got
+        else:
             n = 0
-            for j in src():
+            for j in got:
                 if not ENG.search(j["title"]) or NOT_ENG.search(j["title"]):
                     continue
                 loc = j["location"].strip()
@@ -211,8 +241,6 @@ def main():
                 n += j["url"] not in fresh
                 fresh[j["url"]] = j
             status[name] = n
-        except Exception as e:  # one broken site shouldn't kill the run
-            status[name] = f"error: {type(e).__name__}: {e}"[:200]
         print(f"{name:12} {status[name]}", file=sys.stderr)
 
     merged = {}

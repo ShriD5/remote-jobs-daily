@@ -3,6 +3,7 @@ name: daily scrape
 on:
   schedule:
     - cron: "30 2 * * *" # 08:00 IST
+    - cron: "30 14 * * *" # 20:00 IST
   workflow_dispatch:
 
 permissions:
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}

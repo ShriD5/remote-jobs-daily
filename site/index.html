@@ -98,12 +98,13 @@ function render() {
       state.sources.has(name) ? state.sources.delete(name) : state.sources.add(name); render();
     })));
 
-  $("list").innerHTML = shown.length ? shown.slice(0, 600).map((j) => `
+  const more = shown.length > 600 ? `<div class="empty">Showing 600 of ${shown.length}. Search or pick a source to narrow it down.</div>` : "";
+  $("list").innerHTML = (shown.length ? shown.slice(0, 600).map((j) => `
     <li>
       <div><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>${j.company ? ` <span class="co">· ${esc(j.company)}</span>` : ""}</div>
       <div class="right">${isNew(j) ? '<span class="new">new</span> · ' : ""}${ago(j.posted || j.first_seen)}<br>${esc(j.source)}</div>
       <div class="sub">${esc(j.location)}${j.salary ? ` · <span class="sal">${esc(j.salary)}</span>` : ""}${j.tags.length ? " · " + esc(j.tags.slice(0, 4).join(", ")) : ""}</div>
-    </li>`).join("") : `<div class="empty">Nothing matches.</div>`;
+    </li>`).join("") : `<div class="empty">Nothing matches.</div>`) + more;
 }
 
 fetch("jobs.json?" + Date.now()).then((r) => r.json()).then((d) => {
