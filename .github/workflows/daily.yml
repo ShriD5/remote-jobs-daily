@@ -1,0 +1,40 @@
+name: daily scrape
+
+on:
+  schedule:
+    - cron: "30 2 * * *" # 08:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run scrape.py
+      - name: commit jobs.json
+        run: |
+          git config user.name "jobs-bot"
+          git config user.email "jobs-bot@users.noreply.github.com"
+          git add site/jobs.json
+          git diff --cached --quiet || git commit -m "chore: daily scrape $(date -u +%F)"
+          git push
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

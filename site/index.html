@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote jobs, daily</title>
+<meta name="description" content="Remote engineering jobs from Wellfound, YC, Himalayas, Cutshort, We Work Remotely, Arc, Remote OK, Instahyre and Remotive. Refreshed every day.">
+<style>
+  :root { --bg:#0e0f11; --card:#16181b; --line:#25282d; --text:#e8e9eb; --dim:#8b9097; --acc:#7cc4ff; --new:#5be49b; }
+  @media (prefers-color-scheme: light) { :root { --bg:#fafaf9; --card:#fff; --line:#e7e5e4; --text:#1c1917; --dim:#78716c; --acc:#0369a1; --new:#15803d; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 ui-sans-serif,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 16px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; letter-spacing:-.01em; }
+  .meta { color:var(--dim); font-size:13px; margin-bottom:20px; }
+  .bar { position:sticky; top:0; background:var(--bg); padding:10px 0; z-index:2; border-bottom:1px solid var(--line); }
+  input[type=search] { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); font:inherit; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .chip { border:1px solid var(--line); background:var(--card); color:var(--dim); border-radius:999px; padding:3px 10px; font-size:13px; cursor:pointer; user-select:none; }
+  .chip.on { color:var(--text); border-color:var(--acc); }
+  .chip b { font-weight:500; opacity:.7; margin-left:4px; }
+  .sep { width:1px; background:var(--line); margin:0 4px; }
+  ul { list-style:none; padding:0; margin:12px 0 0; }
+  li { padding:12px 2px; border-bottom:1px solid var(--line); display:grid; grid-template-columns:1fr auto; gap:2px 12px; }
+  li a { color:var(--text); text-decoration:none; font-weight:550; }
+  li a:hover { color:var(--acc); }
+  .co { color:var(--text); opacity:.85; }
+  .sub { color:var(--dim); font-size:13px; grid-column:1; }
+  .right { text-align:right; color:var(--dim); font-size:12px; white-space:nowrap; grid-row:1 / span 2; grid-column:2; }
+  .new { color:var(--new); font-weight:600; }
+  .sal { color:var(--text); opacity:.75; }
+  .empty { color:var(--dim); padding:40px 0; text-align:center; }
+  footer { color:var(--dim); font-size:12px; margin-top:32px; }
+  footer a { color:var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Remote jobs, daily</h1>
+  <div class="meta" id="meta">Loading…</div>
+  <div class="bar">
+    <input type="search" id="q" placeholder="Search title, company, stack, location…" autofocus>
+    <div class="chips" id="filters"></div>
+    <div class="chips" id="sources"></div>
+  </div>
+  <ul id="list"></ul>
+  <footer>
+    Scraped once a day from
+    <a href="https://wellfound.com">Wellfound</a>, <a href="https://www.ycombinator.com/jobs">YC Work at a Startup</a>,
+    <a href="https://himalayas.app">Himalayas</a>, <a href="https://cutshort.io">Cutshort</a>,
+    <a href="https://weworkremotely.com">We Work Remotely</a>, <a href="https://arc.dev">Arc</a>,
+    <a href="https://remoteok.com">Remote OK</a>, <a href="https://www.instahyre.com">Instahyre</a> and
+    <a href="https://remotive.com">Remotive</a>. Every listing links to the original post. Jobs drop off 30 days after they were first seen.
+  </footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { q: "", india: localStorage.india !== "0", fresh: false, sources: new Set() };
+let data;
+
+const ago = (t) => {
+  const s = Date.now() / 1000 - t;
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m";
+  if (s < 86400) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const isNew = (j) => j.first_seen > data.updated - 86400 * 1.2;
+
+function chip(label, on, count, onclick) {
+  const el = document.createElement("span");
+  el.className = "chip" + (on ? " on" : "");
+  el.innerHTML = esc(label) + (count != null ? `<b>${count}</b>` : "");
+  el.onclick = onclick;
+  return el;
+}
+
+function render() {
+  const words = state.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const base = data.jobs.filter((j) => {
+    if (state.india && !j.india_ok) return false;
+    if (state.fresh && !isNew(j)) return false;
+    if (!words.length) return true;
+    const hay = `${j.title} ${j.company} ${j.location} ${j.tags.join(" ")} ${j.source}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+  const shown = state.sources.size ? base.filter((j) => state.sources.has(j.source)) : base;
+
+  const f = $("filters"); f.innerHTML = "";
+  f.append(chip("India / worldwide OK", state.india, null, () => { state.india = !state.india; localStorage.india = state.india ? "1" : "0"; render(); }));
+  f.append(chip("New today", state.fresh, null, () => { state.fresh = !state.fresh; render(); }));
+
+  const counts = {};
+  base.forEach((j) => (counts[j.source] = (counts[j.source] || 0) + 1));
+  const s = $("sources"); s.innerHTML = "";
+  Object.keys(counts).sort((a, b) => counts[b] - counts[a]).forEach((name) =>
+    s.append(chip(name, state.sources.has(name), counts[name], () => {
+      state.sources.has(name) ? state.sources.delete(name) : state.sources.add(name); render();
+    })));
+
+  $("list").innerHTML = shown.length ? shown.slice(0, 600).map((j) => `
+    <li>
+      <div><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>${j.company ? ` <span class="co">· ${esc(j.company)}</span>` : ""}</div>
+      <div class="right">${isNew(j) ? '<span class="new">new</span> · ' : ""}${ago(j.posted || j.first_seen)}<br>${esc(j.source)}</div>
+      <div class="sub">${esc(j.location)}${j.salary ? ` · <span class="sal">${esc(j.salary)}</span>` : ""}${j.tags.length ? " · " + esc(j.tags.slice(0, 4).join(", ")) : ""}</div>
+    </li>`).join("") : `<div class="empty">Nothing matches.</div>`;
+}
+
+fetch("jobs.json?" + Date.now()).then((r) => r.json()).then((d) => {
+  data = d;
+  const fresh = d.jobs.filter(isNew).length;
+  const broken = Object.entries(d.status).filter(([, v]) => typeof v === "string").map(([k]) => k);
+  $("meta").textContent = `${d.jobs.length} jobs · ${fresh} new today · updated ${ago(d.updated)} ago` +
+    (broken.length ? ` · failed today: ${broken.join(", ")}` : "");
+  $("q").oninput = (e) => { state.q = e.target.value; render(); };
+  render();
+});
+</script>
+</body>
+</html>
